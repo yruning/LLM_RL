@@ -1,196 +1,133 @@
-# Review — SCM (Streaming Content Monitor)
-## "From Judgment to Interference: Early Stopping LLM Harmful Outputs via Streaming Content Monitoring"
-
----
+# Review: Dense Pseudo-Label Regression for Prospective Risk Forecasting in Large Language Models
 
 ## Verdict
 - **Decision: REJECT**
-- **Status: SCORECARD**
-- **Score: 68.75 / 100**
-- **Note: Score-floor reconciliation applied. Debate primary verdict was ACCEPT (medium confidence); overridden to REJECT because all three deficit dimensions (E=2, F=2, H=2) reflect genuine paper weaknesses, not calibration mismatches. See scorecard.md for reconciliation detail.**
-
-**Decisive reasons:**
-
-1. **Evaluation is restricted to a self-constructed dataset whose token-level labels were selected post-hoc to maximize SCM performance (G4=CAUTION; scorecard D=3, F=2).** FineHarm token-level labels use a POS-based heuristic chosen by comparing three annotation strategies on SCM test-set performance (Table 4, Appendix A, p.18). There is no evaluation on any externally-labeled benchmark in partial-detection mode. The paper's primary empirical claim — that SCM achieves ≥95% macro F1 at 18% token consumption — is unverified outside this distribution.
-
-2. **Missing ablation directly tests the paper's central training-paradigm claim (scorecard E=2).** The paper claims dual supervision (token-level + holistic) is the key innovation, but the only ablation removes the logic consistency loss (Table 2, "w/o logic"), not the holistic supervision head. The condition "token-level supervision only, no holistic scorer" is never reported. The dual-supervision necessity — the paper's core architectural claim — is not directly established by the ablation suite.
-
-3. **No dataset or code release, making FineHarm — the paper's primary dataset contribution — unusable for follow-on comparisons (scorecard H=2).** FineHarm is presented as a community contribution (Section 1, p.1; Section 3, p.4-5), but no release mechanism is mentioned anywhere in the paper. Future work cannot replicate experiments, compare new methods, or build on the dataset.
+- Status: SCORECARD
+- Total score: 66.25 / 100
+- Decisive reasons:
+  - The paper's core technical contribution — a 2-parameter monotone label schedule (qend, Tinc) layered on top of an acknowledged weak-supervision principle (Sam & Kolter 2023) — does not constitute a non-trivial domain adaptation; the QA label construction is fully specified by two manually-tuned scalars with no principled derivation. (§3.2, p. 3; §4.4, p. 6)
+  - The primary forecasting metrics (MLT, Flip Count) on which the headline claims rest are computed from 200 manually-annotated harmful-token onset positions with no inter-annotator agreement reported and no test-set confidence intervals, leaving the core result statistically unvalidated at the required scale for a venue acceptance. (§4.1.2, p. 4)
 
 ---
 
-## One-paragraph summary (paper-grounded)
+## One-paragraph summary
 
-The paper addresses streaming content moderation: detecting harmful LLM outputs during generation, before the full response is available. The paper claims three contributions: (1) FineHarm, a 29K-pair dataset with POS-based token-level harmfulness labels; (2) SCM, a Qwen2.5-based model trained with dual token-level + holistic supervision and a logic consistency loss; (3) TokenDPO, applying SCM-derived token labels to improve DPO alignment. The key result (Table 2, p.9) is that SCM-0.5B/1.5B/7B achieves 95.64/97.91/97.45 macro F1 in partial-detection mode at average 18% token consumption, compared to 88.77/87.79/78.60 for the same-backbone Qwen2.5 trained for full-response classification and applied to partial text. This is a genuine task-matching contribution: both model families train on FineHarm, so the gain is attributable to the training paradigm, not data advantage. The core limitation is that all evaluation uses FineHarm, whose token-level labels were selected to maximize SCM performance — the gains are real within this distribution but unverified externally.
+The paper addresses a real and underexplored problem: existing safety classifiers are trained on complete responses but must be deployed mid-generation on partial prefixes, creating a supervision mismatch. The proposed solution, Dense Pseudo-Label Regression (DPR), converts each sequence-level safety label into a dense prefix-level regression target using one of three monotone label families (Linear, Question-Aware, Onset), optionally augmented with smoothness and monotonicity regularization. Lightweight probes (linear, MLP, LSTM) trained on Qwen2.5-3B-Instruct hidden states with these targets achieve higher MCC (~0.5 vs ~0.15 for Binary, Table 1), better Mean Lead Time and lower Flip Count at fixed false-positive budgets (Figure 4), and lower calibration MSE vs Monte Carlo rollouts (Figure 5). The supervision-design insight (not architecture) is the bottleneck is well-supported across probe types. The work would matter more if the findings held across multiple model families and were validated on a larger annotated dataset; in its current form, the claimed generality exceeds what the evidence supports.
 
 ---
 
 ## Adversarial brief resolution
-*(resolving counterverdict.md)*
 
-**Point 1: The primary benchmark was constructed using heuristics that directly encode the training signal (POS-based token labels selected to maximize SCM test performance).**
-- Status: **Accepted as concern (major)**
-- Evidence: Table 4 (Appendix A, p.18) — POS strategy chosen because SCM achieves 97.91 vs Diff 89.92 and Delete 92.76. This is benchmark-construction circularity. Mitigated by the fact that the primary Table 2 comparison controls for data (both SCM and Qwen2.5-partial trained on FineHarm), but the construct validity problem remains.
+1. **Point**: The contribution is a routine application of weak supervision (Sam & Kolter 2023) to a new domain.
+   - **Status**: Accepted as concern. The paper explicitly credits Sam & Kolter 2023 and Huang et al. 2022 as the foundational principle (p. 2). The QA label formulation is a specific instantiation with domain-appropriate priors, but does not require novel mathematical techniques. The label families are parameterized by 2 scalars (qend, Tinc) with no principled derivation and acknowledged OOD brittleness.
 
-**Point 2: Annotation strategy was selected post-hoc by the metric it is evaluated on.**
-- Status: **Accepted as concern (major, same as Point 1)**
-- Evidence: Section 3.2 (p.4-5) and Table 4 (Appendix A, p.18). The counterverdict is correct on this point; the decisive_factor_debate.md G4=CAUTION assessment correctly characterizes this as a construct validity problem, not train/test leakage.
+2. **Point**: The evaluation rests on 200 manually-annotated examples without IAA.
+   - **Status**: Accepted as concern. §4.1.2 confirms 200+200 manual annotations. No IAA or test-set significance statistics are reported.
 
-**Point 3 (corrected): Qwen2.5-partial baselines are not trained on FineHarm — the comparison is in-distribution vs out-of-distribution.**
-- Status: **Refuted (factual error in counterverdict)**
-- Evidence: Section 5.1 (p.8): "we fine-tuned several models with full parameters on the training set of FineHarm." All baselines including Qwen2.5-partial are trained on FineHarm data. The comparison is training paradigm, not in-distribution vs OOD. The +10 macro F1 gain at 1.5B is attributable to the training objective, not data advantage.
+3. **Point** (counterverdict): DPR formalizes a useful evaluation framework (MLT, Flip Count, MC calibration) not present in prior work.
+   - **Status**: Partially accepted. MLT/Flip Count are valuable new evaluation metrics for runtime safety monitoring. However, the metrics themselves are not validated (no IAA for th, no correlation to downstream intervention outcomes), and the paper's core claim is about DPR method superiority, not about the evaluation framework as a standalone contribution.
 
-**Point 4: 18% termination figure and k=4 threshold derived from the same evaluation distribution; Section 5.1 says validation set but Appendix B.1 is ambiguous.**
-- Status: **Accepted as minor concern**
-- Evidence: Appendix B.1 (p.18): "θ ∈ {0.5, 0.6, 0.7, 0.8, 0.9} and k ∈ {1, 2, ⋯, 10} are selected based on best macro F1 score" — no explicit mention of validation vs test. Section 5.1 (p.8) explicitly says validation set; balance of evidence supports validation-set selection. Ambiguity is a writing clarity issue, not a validity failure.
-
-**Point 5: TokenDPO shows Physical harm regression (3.90 vs 5.70 DPO) and slight helpfulness decline.**
-- Status: **Accepted as minor concern**
-- Evidence: Table 3 (p.11). The abstract's "higher harmlessness score than DPO" is an overclaim (G7 marginal). The Physical harm regression is a genuine limitation for a safety application, but TokenDPO is a secondary downstream application, not the primary claim.
+4. **Point** (counterverdict): Cross-architecture consistency (4 probe types) provides model-independent evidence.
+   - **Status**: Refuted as "above-the-line" evidence. The cross-architecture validation is on the same model (Qwen2.5-3B-Instruct); it isolates probe architecture from supervision design but does not isolate the LLM family. The claim that supervision design is the bottleneck holds within Qwen2.5-3B, but whether this transfers to other model families is untested for the primary forecasting metrics.
 
 ---
 
 ## Fatal-flaw gates
 
-No gate failures (all G0–G7 PASS or CAUTION). G4=CAUTION is not a FAIL; it produces a score cap, not a review termination.
-
-**G4=CAUTION summary:**
-- Gate: G4 — No Obvious Validity Bugs / Leakage / Confounding
-- Concern: POS-based token annotation strategy selected post-hoc by maximizing SCM performance on FineHarm test set (Table 4, Appendix A, p.18). Creates dependency between label construction and evaluation metric.
-- Why not FAIL: The key Table 2 comparison is internally controlled (both SCM and Qwen2.5-partial trained on FineHarm); full-detection baselines reach comparable absolute F1 under same labels; paper acknowledges annotation limitation in Section 6 (p.12).
-- Consequence: Dimension D capped at 3/4 per gate policy.
+No fatal gate failures. G4=CAUTION (bespoke metric construct validity concern for MLT/Flip Count).
 
 ---
 
 ## Scorecard
 
-| Dim | Score | Weight | Contribution |
-|-----|-------|--------|-------------|
-| A Problem & motivation | 3/4 | 15 | 11.25 |
-| B Novelty & insight | 3/4 | 15 | 11.25 |
-| C Technical quality | 3/4 | 15 | 11.25 |
-| D Evaluation rigor | 3/4 (G4 cap) | 25 | 18.75 |
-| E Causal understanding | 2/4 | 10 | 5.00 |
-| F Robustness/generalization | 2/4 | 10 | 5.00 |
-| G Clarity/no fluff | 3/4 | 5 | 3.75 |
-| H Reproducibility/artifacts | 2/4 | 5 | 2.50 |
-| **Total** | | **100** | **68.75** |
+- A Problem & motivation: 3/4 → weighted 11.25/15
+- B Novelty & insight: 2/4 → weighted 7.50/15
+- C Technical quality: 3/4 → weighted 11.25/15
+- D Evaluation rigor: 3/4 → weighted 18.75/25 *(G4=CAUTION cap)*
+- E Causal understanding: 3/4 → weighted 7.50/10 *(G4=CAUTION cap)*
+- F Robustness/generalization: 2/4 → weighted 5.00/10
+- G Clarity/no fluff: 2/4 → weighted 2.50/5
+- H Reproducibility/artifacts: 2/4 → weighted 2.50/5
+- **Total: 66.25/100**
 
 ---
 
-## Major concerns (max 5)
+## Major concerns
 
-**Concern 1 (unknown): Construct validity — token-level labels selected to maximize SCM performance**
-- Origin: gates G4; scorecard D
-- Origin pointer: gates.md G4 CAUTION; counterverdict.md bullet #1
-- Claim affected: Claim 1 (SCM achieves ≥95% macro F1 at 18% tokens)
-- Evidence location: Table 4 (Appendix A, p.18); Section 3.2 (p.4-5)
-- Why it matters: The POS-based token labels were selected by testing three annotation strategies and choosing the one under which SCM performs best. A model trained to predict POS-heuristic labels will naturally outperform a full-detection classifier applied to partial text under those same heuristic labels. The +6 to +18 F1 gains may reflect alignment between SCM's training objective and the label generation heuristic rather than genuine streaming detection capability.
-- Concrete experiment/fix: Evaluate SCM-1.5B and Qwen2.5-1.5B-partial on WildGuard test set or ToxicChat truncated to 18% of response tokens, using external labels. If SCM maintains ≥5 macro F1 advantage over Qwen2.5-partial on external data, the construct validity concern is substantially reduced. Expected outcome: uncertain — the paper provides no indirect evidence that POS-alignment generalizes to independently-labeled data.
-- Severity: **(unknown)** — the paper's within-distribution evidence is internally consistent, but no external validation exists to confirm or deny whether the gains generalize.
+**Concern 1 — Scale and statistical validity of the primary forecasting evaluation** **(unknown)**
+- Origin: scorecard; Origin pointer: Dimension D, G4=CAUTION
+- Claim affected: Claim 1 (MLT/Flip Count improvement)
+- Evidence location: §4.1.2 (p. 4): "200 positive and 200 negative examples"; "we manually annotate the location of harmful content within the responses." No inter-annotator agreement reported. No confidence intervals on test-set comparisons in Table 1 or Figures 4/9.
+- Why it matters: MLT and Flip Count are the paper's main differentiators from prior work. If the 200-example annotation is noisy or unreliable, the headline forecasting advantage is unverified. The gap on discrimination metrics (MCC: 0.509 vs 0.148, Table 1) is large enough to be robust at this sample size, but the trajectory metrics are not similarly validated.
+- Concrete fix: Report inter-annotator agreement (IAA, e.g., Cohen's κ or Krippendorff's α) for the manual t_h annotations. Expand the trajectory evaluation set to ≥500 examples. Report bootstrap or permutation confidence intervals for the test-set MLT and Flip Count comparisons.
 
-**Concern 2 (unknown): Missing direct ablation of holistic supervision necessity**
-- Origin: scorecard E
-- Origin pointer: scorecard.md Dimension E
-- Claim affected: Claim 2 (hierarchical consistency-aware learning bridges the training-inference gap)
-- Evidence location: Table 2 (p.9); Section 4.2 (p.6-7)
-- Why it matters: The paper's central architectural claim is that dual supervision (token-level + holistic) is essential. Table 2 ablates the logic consistency loss ("w/o logic": SCM-1.5B 97.91 → 92.53), but this condition retains the holistic supervision head. The condition "token-level supervision only, no holistic scorer" is never reported. Without this ablation, it is impossible to determine whether the holistic supervision head contributes at all — all gains could be attributed to token-level supervision alone.
-- Concrete experiment/fix: Add condition "SCM-token-only" (token scorer + logic loss, holistic scorer suppressed at training time) to Table 2 for at least the 1.5B model. If performance drops materially versus full SCM (maintaining dual supervision), dual supervision necessity is established. The α=0 curve in Figure 7 (response-level-only limit) approaches this but is indirect.
-- Severity: **(unknown)** — the paper provides theoretical motivation for dual supervision (logic consistency requires both objectives to be well-defined), but no direct empirical test.
+**Concern 2 — Single-model generalization gap** **(unknown)**
+- Origin: scorecard; Origin pointer: Dimension F, Dimension B
+- Claim affected: Core claim (headline generalizability of DPR as a training approach)
+- Evidence location: §4.1.4 (p. 5): "We use Qwen2.5-3B-Instruct as the target model." Tables 2–3 (Appendix) show Gemma-2-2b results for structural loss only — not for MLT/Flip Count metrics.
+- Why it matters: The claim that "supervision granularity is the bottleneck" (not architecture) is tested across 4 probe types on one model. Whether the label design benefit transfers to different base model geometries (e.g., Llama-3, Mistral) is unknown. Safety-relevant representations may be model-family-specific; a finding on Qwen2.5-3B is not necessarily transferable.
+- Concrete fix: Replicate the primary MLT/Flip Count comparison (DPR-QA vs Binary vs Resp-only) on ≥1 additional base model. If the pattern holds, the generalizability claim is credible.
 
-**Concern 3 (addressable): No out-of-distribution evaluation for a safety-critical deployment claim**
-- Origin: scorecard F
-- Origin pointer: scorecard.md Dimension F
-- Claim affected: Claim 1 (SCM achieves ≥95% macro F1 at 18% tokens); deployment viability
-- Evidence location: Section 5 (p.8-11) — all evaluations within FineHarm; no external benchmark results
-- Why it matters: The paper frames SCM as a component for production LLM deployment (Section 1, p.1-2; Section 2, p.3). A safety system with no evaluation on external data cannot credibly support deployment claims. Additionally, no adversarial robustness evaluation is conducted — the paper's own POS analysis (Figure 6, p.11) reveals SCM attends primarily to nouns and verbs; harmful content expressed through function words or syntactically atypical structures is untested.
-- Concrete experiment/fix: (1) Evaluate SCM and Qwen2.5-partial on WildGuard test set (response-level labels only needed — truncate at 18% token threshold and use response-level FP/FN as proxy). (2) Test on a small adversarial set where harmful content is expressed without typical POS trigger words. The first experiment is achievable without new annotation; the second requires modest additional effort.
-- Severity: **(addressable)** — partial evidence of generalization comes from 3-scale consistent results (Section 5) and large effect sizes, but external validation is a routine expectation for deployment-targeted safety papers.
+**Concern 3 — DPR label parameters are hand-tuned with acknowledged OOD brittleness** **(addressable if systematic)**
+- Origin: decisive_factor_debate; Origin pointer: debate Judge ruling, bullet 1
+- Claim affected: Claim 1 (DPR improves early-warning quality)
+- Evidence location: §3.2 (p. 3): qend and Tinc defined as free parameters. §4.4 (p. 6): "the degraded performance of other DPR configurations is primarily due to a mismatch between the assumed tolerant reaction window during training and the actual onset of harmful content in the out-of-distribution evaluation dataset."
+- Why it matters: If Tinc must be matched to the deployment distribution to avoid degradation, the method requires distributional assumptions about when harmful content appears — a practical constraint the paper does not address. The "mismatch" between training (Tinc=10) and BeaverTail (earlier onset) is a real brittleness. The fix for deployment would require knowing Tinc in advance.
+- Concrete fix: Present a systematic Tinc sensitivity analysis showing how performance degrades as a function of Tinc mismatch. Propose a method for estimating Tinc from unlabeled deployment data, or acknowledge this as a deployment limitation.
 
-**Concern 4 (addressable): FineHarm dataset and SCM model weights not released**
-- Origin: scorecard H
-- Origin pointer: scorecard.md Dimension H; Skill 12 artifact-release test
-- Claim affected: Community utility; reproducibility; FineHarm as a contribution
-- Evidence location: Section 3 (p.4-5) — FineHarm described as community contribution; no release URL or commitment mentioned anywhere in the paper
-- Why it matters: FineHarm is presented as one of three primary contributions (Abstract, p.1). Without release, no future work can compare against FineHarm baselines, reproduce Table 2, or use FineHarm as a standard streaming detection benchmark. The community tool value of a dataset contribution is zero if the dataset is not accessible.
-- Concrete experiment/fix: Release FineHarm (train/dev/test splits) and SCM checkpoints at all three scales on HuggingFace or equivalent. Annotation prompt templates are already provided (Table 8, Appendix A, p.20) — the dataset release is straightforward. For SCM checkpoints, training hyperparameters are in Table 6 (Appendix C, p.19), so release of checkpoints is a mechanical addition.
-- Severity: **(addressable)** — does not invalidate the results, but is a blocking concern for the paper's claimed community impact.
-
-**Concern 5 (unknown): SCM-7B anomaly — partial detection outperforms full detection by 4.7 macro F1**
-- Origin: scorecard D
-- Origin pointer: scorecard.md Dimension D negative factors
-- Claim affected: Internal validity of Table 2 results at 7B scale
-- Evidence location: Table 2 (p.9): SCM-7B partial 97.45 vs Qwen2.5-7B full 92.75
-- Why it matters: A model trained for partial detection (Delay-k=4, seeing 18% of tokens on average) consistently outperforming the same backbone trained for full detection on full responses is anomalous. This should not happen if the full-detection model is properly trained — it sees strictly more information. Possible explanations: the 7B full-detection model is undertrained; there is label noise in the test set that disproportionately affects the 7B full-detection prediction; or there is an evaluation artifact. None are discussed.
-- Concrete experiment/fix: Report training curves for SCM-7B vs Qwen2.5-7B full-detection to verify both converged. Alternatively, confirm that the comparison uses identical training hyperparameters (learning rate, epochs) at 7B scale — Table 6 (Appendix C, p.19) should include 7B-specific settings if they differ.
-- Severity: **(unknown)** — affects confidence in the 7B results but does not invalidate the 0.5B and 1.5B results which show the consistent pattern of interest.
+**Concern 4 — Missing training details prevent full reproducibility** **(addressable)**
+- Origin: scorecard; Origin pointer: Dimension H
+- Claim affected: All claims (reproducibility)
+- Evidence location: §4.1.4 (p. 5) omits optimizer, learning rate, batch size, and number of training epochs. Train/validation split sizes for PKU-Alignment + OpenAssistant are not reported.
+- Why it matters: Without training details, replication is difficult. The variance over 5 seeds (Table 1) implies these are full training runs, but the training budget is unknown.
+- Concrete fix: Add a reproducibility section with full training hyperparameters. Release code.
 
 ---
 
 ## Minor concerns
 
-1. **Abstract overclaims TokenDPO harmlessness.** "Higher harmlessness score than DPO" (Abstract, p.1) — Table 3 (p.11) shows Physical harm regression (3.90 TokenDPO vs 5.70 DPO). Should read "higher average harmlessness on most categories." Origin: gates G7 PASS marginal.
+1. **Notation inconsistency in §4.1.3**: "(ii) DPR-QA(0.2): Question-Aware Label(qend = 0.4, Tinc = 10)" — qend=0.4 contradicts the naming convention where the parenthetical is qend. Appears to be a typo (should be qend=0.2). Origin: G clarity; pointer: §4.1.3 p. 4.
 
-2. **Max-pooling function g(·) not justified.** Section 4.2 (p.6): g(·)=max is stated but not compared to mean pooling or attention-weighted pooling. Minor gap given large effect sizes, but worth a sensitivity note. Origin: scorecard C.
+2. **Non-existent section reference**: §4.1.3 references "Sec 3.4" which does not exist in the paper. Origin: G clarity; pointer: §4.1.3 p. 4.
 
-3. **Decoder-only architecture for classification: trade-offs not discussed.** The paper uses Qwen2.5 (decoder-only, last-token hidden state) for binary classification. No comparison or discussion of encoder-only (e.g., DeBERTa, RoBERTa) or encoder-decoder architectures for this task. ModernBERT is included in Table 2 but only as a baseline, not as an architectural comparison. Origin: scorecard C.
+3. **Smoothness and monotonicity not ablated separately**: Table 1 and Figures 4/9 show "+Struct" as a combined regularization. The individual contribution of λ_smooth vs λ_mono is not isolate. Origin: scorecard E; pointer: Eq. 2 (p. 3).
 
-4. **k=1 labeled "naive partial detection" rather than as the SCM special case.** Section 4.3 (p.7) introduces Delay-k with k=1 as naive detection, which could confuse readers into thinking k=1 is a non-SCM baseline rather than SCM with the most aggressive stopping criterion. A clarifying note would prevent misreading. Origin: scorecard G.
+4. **LlamaGuard-3-8B comparison paradigm mismatch**: The comparison to LlamaGuard-3-8B (text-based, 8B parameters) is presented alongside hidden-state probes but is not a fair head-to-head. The framing should clarify this is a motivating comparison, not a method comparison. Origin: scorecard D; pointer: §4.1.3 (p. 5).
 
-5. **Appendix B.1 hyperparameter selection ambiguity.** Appendix B.1 (p.18): "θ and k are selected based on best macro F1 score" — does not specify validation vs test set. Section 5.1 (p.8) says validation set; the Appendix should be consistent. Origin: decisive_factor_debate.md cross-exam Q2 (opposite side).
+5. **No performance-vs-prefix-length analysis**: The paper shows forecasting quality as a function of FP budget but not as a function of prefix length. For early-warning analysis, how MLT varies with response length would be informative. Origin: scorecard F; pointer: Figure 4.
 
-6. **FineHarm annotation: class imbalance and category distribution not reported.** Section 3.1 (p.4): 29K pairs with majority voting labels — but the ratio of harmful to benign responses, and the distribution across harm categories, is not fully reported in the main paper. This affects interpretation of macro F1 scores (macro F1 is sensitive to class distribution). Origin: scorecard D.
-
-7. **TokenDPO downstream evaluation uses GPT-4.1 as judge with no human validation.** Table 3 (p.11): GPT-as-judge used for harmlessness/helpfulness scoring. No inter-annotator agreement or human validation reported. For a safety-critical downstream application, GPT-as-judge without validation is weak evidence. Origin: scorecard D.
+6. **DPR-Onset not shown in Figure 4 (main body)**: Figure 4 shows DPR-QA(0.2) but not DPR-Onset(0.4) for the trajectory metrics. Figure 9 (appendix) includes all variants. Main body should show the full comparison. Origin: G clarity; pointer: Figure 4 p. 7.
 
 ---
 
 ## Required experiments (to flip verdict to ACCEPT)
 
-**Ordered by expected information gain per unit effort:**
+1. **Multi-model replication** (Concern 2): Run the primary forecasting comparison (DPR-QA vs Binary vs Resp-only) on ≥1 additional base model (e.g., Llama-3-8B-Instruct or Mistral-7B-Instruct) including MLT/Flip Count metrics with annotated test sets. Expected information gain: HIGH. If the pattern holds on a second model, the generalizability of the supervision-design insight is established and the novelty claim is considerably stronger.
 
-1. **OOD evaluation in partial-detection mode (highest priority).** Evaluate SCM-1.5B and Qwen2.5-1.5B-partial on WildGuard test set or ToxicChat, truncated to the first 18% of response tokens (by character or word count as proxy). Report macro F1 for both models on this external data. If SCM maintains ≥5 macro F1 advantage over Qwen2.5-partial on external data, the construct validity concern (Concern 1) and OOD concern (Concern 3) are substantially addressed. This experiment requires no new annotation: WildGuard and ToxicChat have response-level labels sufficient for this analysis. *(QC-7 check: Standard for a deployment-targeted safety paper at top venues. Not over-demanding — single external benchmark evaluation is routine.)*
-
-2. **Token-level supervision ablation.** Add "SCM-token-only" condition (token scorer active at training, holistic scorer suppressed) to Table 2 at the 1.5B scale. This directly tests whether the holistic supervision head is necessary (Concern 2). If full SCM (97.91) substantially outperforms SCM-token-only, dual supervision necessity is established. This is a single re-training run using already-specified infrastructure (Table 6, Appendix C). *(QC-7 check: Standard for a methods paper claiming a multi-component training paradigm — ablation of each component is expected.)*
-
-3. **FineHarm and SCM checkpoint release.** Release FineHarm (train/dev/test, with annotation prompts already provided in Table 8) and SCM checkpoints at all scales. This is a prerequisite for H ≥ 3 and for the dataset contribution to have community value (Concern 4). *(QC-7 check: Not standard as a condition for acceptance per QC-11 — code/data release is typically Minor unless the paper claims it as a primary contribution. Here FineHarm is claimed as a primary contribution in the Abstract, so release is a consistency requirement, not an over-demand.)*
+2. **Enlarged and IAA-validated trajectory evaluation** (Concern 1): Expand the manually-annotated MLT/Flip Count test set to ≥500 examples (ideally 1000) with at least 2 annotators and reported κ. Report bootstrap CIs for the MLT comparisons. Expected information gain: HIGH. If the MLT advantage survives at scale with high IAA, the core forecasting claim is validated.
 
 ---
 
 ## Optional improvements
 
-1. **Latency/throughput evaluation.** The paper makes deployment claims but provides no wall-clock latency comparison between SCM, Qwen2.5-partial (naive), and full detection at inference. For a system paper targeting production deployment, latency data (tokens/sec, end-to-end response time, memory overhead) at each model scale would substantially strengthen the practical motivation.
-
-2. **Per-category F1 breakdown.** Table 2 reports aggregate macro F1. A per-category breakdown (e.g., by harm type: sexual content, violence, personal attacks) would reveal whether SCM's gains are uniform across harm categories or concentrated in easier-to-detect types. Especially important given FineHarm is sourced from six existing datasets with different category distributions.
-
-3. **Adversarial robustness mini-evaluation.** Generate 50-100 harmful responses where harmful content is expressed primarily through function words, passive voice, or nominalization (avoiding the high-F1 POS trigger words identified in Figure 6). Report SCM detection rate on this set. This directly addresses the most critical practical limitation for a safety system.
-
-4. **Benign false-positive rate.** The 18% average termination figure is computed on harmful responses only (Figure 5 caption, p.10). The false positive rate on benign responses (how often SCM incorrectly triggers early stopping on harmless content) is not reported. This is critical for deployment viability — a high benign false positive rate would make the system unusable in practice.
-
-5. **Comparison to production APIs in partial-detection mode.** Table 2 notes that LlamaGuard and Perspective API are out of scope as production APIs (Section 5.1, p.8). However, a single illustrative comparison of these APIs applied to partial text (their natural usage gap) would strengthen the problem motivation in Section 2.
+1. A systematic Tinc sensitivity analysis would help practitioners choose label parameters for their deployment distribution.
+2. Ablating smoothness and monotonicity regularization separately would give cleaner insight into their individual contributions.
+3. Analyzing performance vs. prefix length / response position would provide richer understanding of when DPR is most valuable.
+4. Code release would substantially improve reproducibility and community adoption.
+5. The evaluation framework (MLT/Flip Count + Monte Carlo calibration) is independently valuable; a brief discussion of it as a standalone contribution to the runtime safety evaluation toolkit would strengthen the paper's framing.
 
 ---
 
 ## "If I were the author, I would do this next"
 
-1. **Run SCM-1.5B on WildGuard in partial-detection mode.** This is a one-afternoon experiment. The data is publicly available, the model is already trained. A ≥5 macro F1 advantage over Qwen2.5-partial on external data would transform the paper's evidence base from "compelling within-distribution" to "generalizes beyond FineHarm." This is the highest-leverage action.
-
-2. **Add the holistic-scorer ablation (token-only condition) to Table 2.** One re-training run at 1.5B. This directly validates the dual-supervision claim. Without it, the paper's central architectural contribution is asserted but not proven. Add this to the existing ablation table — it is already the natural missing condition.
-
-3. **Release FineHarm immediately.** Upload to HuggingFace with train/dev/test splits. The annotation prompts are already in Table 8. This takes one day and transforms FineHarm from an internal artifact into a community resource that will generate citations. The dataset contribution is the most portable part of this work — it should not be locked away.
-
-4. **Report the false positive rate on benign responses.** Add a two-column table: for each model scale and k threshold, report (a) macro F1 on harmful responses and (b) false positive rate on benign responses. This completes the deployment picture and makes the efficiency claim interpretable.
-
-5. **Investigate and explain the SCM-7B anomaly.** SCM-7B partial (97.45) outperforming Qwen2.5-7B full (92.75) by 4.7 points is unexplained. Report training curves, check for convergence differences, or add a footnote explaining the discrepancy. Unexplained anomalies in flagship results undermine confidence in the entire table.
-
-6. **Rewrite the TokenDPO abstract claim.** Change "higher harmlessness score than DPO" to "higher average harmlessness on most categories, with one category (Physical harm) showing regression." This takes 30 seconds and eliminates the G7 marginal flag.
+- Run the core DPR-QA vs Binary comparison on Llama-3-8B-Instruct. If the supervision-design bottleneck holds on a second major model family, that single replication substantially raises the contribution above the line.
+- Expand the t_h annotation to 1000 examples with IAA, report bootstrap CIs for MLT comparisons. The current 200-example annotation is the weakest link in an otherwise well-designed study.
+- Propose a method for estimating Tinc from unlabeled deployment data (e.g., using the trained probe itself to estimate onset distribution), removing the key brittleness identified in OOD evaluation.
+- Release code. The evaluation framework (MLT, Flip Count, Monte Carlo calibration pipeline) is a more lasting contribution than the specific label designs; making it easy to use is the fastest path to community adoption.
+- Consider separating the evaluation framework contribution from the DPR method contribution. The framework itself deserves more space; the two together dilute each other.
 
 ---
 
 ## Remaining uncertainty
 
-The paper's core empirical claim — that native dual-supervision training substantially outperforms task-mismatched baselines for streaming detection — is supported by internally controlled evidence (Table 2: both SCM and Qwen2.5-partial trained on FineHarm; gains attributable to training objective). The decisive_factor_debate.md primary verdict of ACCEPT (medium confidence) reflects this genuine contribution. The REJECT verdict produced by score-floor reconciliation does not mean the paper is wrong; it means the evidence base is insufficient for acceptance at current scope.
-
-The key remaining uncertainty is whether the +6 to +18 macro F1 gains reflect genuine streaming detection capability or alignment between SCM's training objective and the POS-heuristic label distribution used for evaluation. This is resolvable with a single external-benchmark experiment (Required experiment #1 above). If SCM demonstrates comparable gains on WildGuard or ToxicChat in partial-detection mode, the paper's central claim is substantially validated and the verdict should be reconsidered.
-
-The SCM-7B anomaly and missing holistic-scorer ablation are secondary uncertainties that would be resolved by straightforward re-runs.
+The core empirical question is whether DPR-QA's advantage over binary prefix training is a model-specific artifact of Qwen2.5-3B's internal geometry, or a general property of supervision design for LLM safety probing. The paper provides no evidence on this, and the failure of DPR-Onset/QA(0.2) on BeaverTail suggests sensitivity to distributional assumptions. If the pattern holds on a second model with a larger annotated test set, the contribution would be above the line. If it does not hold, the paper's contribution reduces to the evaluation framework (MLT/Flip Count/MC calibration) plus a dataset-specific observation.
